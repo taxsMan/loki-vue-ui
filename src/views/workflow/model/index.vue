@@ -130,18 +130,22 @@
 
 
         <el-form-item prop="tag" label="模型Key">
-          <select-plus
-            v-model="form.tag"
-            style="width: 150px"
-            label="key"
-            value="key"
-            key="key"
-            :options="async ()=>{return (await listKeys())['data'];}"
-          />
+
           <el-form-item prop="appended">
             <el-input v-model="form.appended" placeholder="附加字符，可为空"
-                      :disabled="ids && ids.length > 0 && billType === 'update'" maxlength="20"
+                      :disabled="ids && ids.length > 0 && billType === 'update'"
+                      maxlength="20"
                       show-word-limit>
+              <template #prepend>
+                <select-plus
+                    v-model="form.tag"
+                    style="width: 150px"
+                    label="key"
+                    value="key"
+                    key="key"
+                    :options="async ()=>{return (await listKeys())['data'];}"
+                />
+              </template>
             </el-input>
           </el-form-item>
         </el-form-item>

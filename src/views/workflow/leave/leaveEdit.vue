@@ -25,57 +25,61 @@
                :rules="rules" label-width="80px">
         <el-form-item label="请假类型" prop="leaveType">
           <el-select v-model="form.leaveType" placeholder="请选择请假类型" style="width: 100%">
-            <el-option v-for="item in options" :key="item.value" :label="item.label" :value="item.value" />
+            <el-option v-for="item in options" :key="item.value" :label="item.label" :value="item.value"/>
           </el-select>
         </el-form-item>
         <el-form-item label="请假时间">
           <el-date-picker
-            v-model="leaveTime"
-            type="daterange"
-            range-separator="To"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            @change="changeLeaveTime()"
+              v-model="leaveTime"
+              type="daterange"
+              range-separator="To"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              @change="changeLeaveTime()"
           />
         </el-form-item>
         <el-form-item label="请假天数" prop="leaveDays">
-          <el-input v-model="form.leaveDays" disabled type="number" placeholder="请输入请假天数" />
+          <el-input v-model="form.leaveDays" disabled type="number" placeholder="请输入请假天数"/>
         </el-form-item>
         <el-form-item label="请假原因" prop="remark">
-          <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="请输入请假原因" />
+          <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="请输入请假原因"/>
         </el-form-item>
         <el-form-item label="批准人" prop="ids">
-          <el-input v-model="form.ids" />
+          <el-input v-model="form.ids"/>
         </el-form-item>
       </el-form>
     </el-card>
     <!-- 提交组件 -->
     <process-submit
-      v-model:variables="variables"
-      :task-parameters="taskVariables"
+        ref="processSubmitRef"
+        v-model:visible="visible"
+        :task-parameters="taskVariables"
+        success-redirect="/demo/leave"
     />
     <!--    <submitVerify ref="submitVerifyRef" :variables="variables" :task-variables="taskVariables" @submit-callback="submitCallback" />-->
     <!-- 审批记录 -->
-    <approvalRecord ref="approvalRecordRef" />
+    <approvalRecord ref="approvalRecordRef"/>
   </div>
 </template>
 
 <script setup name="Leave" lang="ts">
-import { addLeave, getLeave, updateLeave } from '@/api/workflow/leave';
-import { LeaveForm, LeaveQuery, LeaveVO } from '@/api/workflow/leave/types';
-import { startWorkFlow } from '@/api/workflow/task';
+import {addLeave, getLeave, updateLeave} from '@/api/workflow/leave';
+import {LeaveForm, LeaveQuery, LeaveVO} from '@/api/workflow/leave/types';
+import {startWorkFlow} from '@/api/workflow/task';
 import SubmitVerify from '@/components/Process/submitVerify.vue';
 import ApprovalRecord from '@/components/Process/approvalRecord.vue';
-import { AxiosResponse } from 'axios';
-import { StartProcessBo } from '@/api/workflow/workflowCommon/types';
+import {StartProcessBo} from '@/api/workflow/workflowCommon/types';
 import ProcessSubmit from '@/components/Process/processSubmit.vue';
 
-const { proxy } = getCurrentInstance() as ComponentInternalInstance;
+const {proxy} = getCurrentInstance() as ComponentInternalInstance;
 
 const buttonLoading = ref(false);
 const loading = ref(true);
 const leaveTime = ref<Array<string>>([]);
-const variables = ref(false);
+const visible = ref(false);
+
+// 任务流组件
+const processSubmitRef = ref(null);
 //路由参数
 const routeParams = ref<Record<string, any>>({});
 const options = [
@@ -121,7 +125,7 @@ const initFormData: LeaveForm = {
   ids: undefined
 };
 const data = reactive<PageData<LeaveForm, LeaveQuery>>({
-  form: { ...initFormData },
+  form: {...initFormData},
   queryParams: {
     pageNum: 1,
     pageSize: 10,
@@ -129,19 +133,19 @@ const data = reactive<PageData<LeaveForm, LeaveQuery>>({
     endLeaveDays: undefined
   },
   rules: {
-    id: [{ required: true, message: '主键不能为空', trigger: 'blur' }],
-    leaveType: [{ required: true, message: '请假类型不能为空', trigger: 'blur' }],
-    leaveTime: [{ required: true, message: '请假时间不能为空', trigger: 'blur' }],
-    leaveDays: [{ required: true, message: '请假天数不能为空', trigger: 'blur' }],
-    ids: [{ required: true, message: '审批人不能为空', trigger: 'blur' }]
+    id: [{required: true, message: '主键不能为空', trigger: 'blur'}],
+    leaveType: [{required: true, message: '请假类型不能为空', trigger: 'blur'}],
+    leaveTime: [{required: true, message: '请假时间不能为空', trigger: 'blur'}],
+    leaveDays: [{required: true, message: '请假天数不能为空', trigger: 'blur'}],
+    ids: [{required: true, message: '审批人不能为空', trigger: 'blur'}]
   }
 });
 
-const { form, rules } = toRefs(data);
+const {form, rules} = toRefs(data);
 
 /** 表单重置 */
 const reset = () => {
-  form.value = { ...initFormData };
+  form.value = {...initFormData};
   leaveTime.value = [];
   leaveFormRef.value?.resetFields();
 };
@@ -169,73 +173,48 @@ const getInfo = () => {
 
 /** 提交按钮 */
 const submitForm = (status: string) => {
+
   if (leaveTime.value.length === 0) {
     proxy?.$modal.msgError('请假时间不能为空');
     return;
   }
   try {
     leaveFormRef.value?.validate(async (valid: boolean) => {
+      // 参数验证
+      if (!valid) return;
       form.value.startDate = leaveTime.value[0];
       form.value.endDate = leaveTime.value[1];
-      // taskVariables.value.ids = form.value.ids;
-      taskVariables.value = form.value;
-      variables.value = true;
+
+      let res = (form.value.id ? await updateLeave(form.value) : await addLeave(form.value)).data ?? form.value;
+
+
+      // 暂存
+      if(status === 'draft') {
+        proxy.$router.push('/demo/leave');
+        return
+      }
+
+      if (res.id) {
+        taskVariables.value = form.value;
+        visible.value = true;
+        await processSubmitRef.value.startWorkFlow({
+
+          businessKey: res.id as string,
+          tableName: "test_leave",
+          taskVariables: form.value
+        });
+      }
       return;
 
-      // if (valid) {
-      //   buttonLoading.value = true;
-      //   let res: AxiosResponse<LeaveVO>;
-      //   if (form.value.id) {
-      //     res = await updateLeave(form.value);
-      //   } else {
-      //     res = await addLeave(form.value);
-      //   }
-      //   form.value = res.data;
-      //   if (status === 'draft') {
-      //     buttonLoading.value = false;
-      //     proxy?.$modal.msgSuccess('暂存成功');
-      //     proxy.$tab.closePage(proxy.$route);
-      //     proxy.$router.go(-1);
-      //   } else {
-      //     await handleStartWorkFlow(res.data);
-      //   }
-      // }
     });
   } finally {
     buttonLoading.value = false;
   }
 };
 
-//提交申请
-const handleStartWorkFlow = async (data: LeaveVO) => {
-  try {
-    submitFormData.value.tableName = 'test_leave';
-    submitFormData.value.businessKey = data.id;
-    //流程变量
-    taskVariables.value = {
-      entity: data,
-      leaveDays: data.leaveDays,
-      userList: [1, 3],
-      userList2: [1, 3]
-    };
-    submitFormData.value.variables = taskVariables.value;
-    const resp = await startWorkFlow(submitFormData.value);
-    if (submitVerifyRef.value) {
-      buttonLoading.value = false;
-      submitVerifyRef.value.openDialog(resp.data.taskId);
-    }
-  } finally {
-    buttonLoading.value = false;
-  }
-};
 //审批记录
 const handleApprovalRecord = () => {
   approvalRecordRef.value.init(form.value.id);
-};
-//提交回调
-const submitCallback = async () => {
-  await proxy.$tab.closePage(proxy.$route);
-  proxy.$router.go(-1);
 };
 
 //返回
@@ -250,10 +229,10 @@ const approvalVerifyOpen = async () => {
 //校验提交按钮是否显示
 const submitButtonShow = computed(() => {
   return (
-    routeParams.value.type === 'add' ||
-    (routeParams.value.type === 'update' &&
-      form.value.status &&
-      (form.value.status === 'draft' || form.value.status === 'cancel' || form.value.status === 'back'))
+      routeParams.value.type === 'add' ||
+      (routeParams.value.type === 'update' &&
+          form.value.status &&
+          (form.value.status === 'draft' || form.value.status === 'cancel' || form.value.status === 'back'))
   );
 });
 
@@ -261,6 +240,7 @@ const submitButtonShow = computed(() => {
 const approvalButtonShow = computed(() => {
   return routeParams.value.type === 'approval' && form.value.status && form.value.status === 'waiting';
 });
+
 
 onMounted(() => {
   nextTick(async () => {
